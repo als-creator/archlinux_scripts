@@ -45,3 +45,4 @@ echo "sudo systemctl restart byedpi для перезапуска"
 echo "sudo systemctl start byedpi для запуска"
 echo "sudo systemctl status byedpi для проверки статуса сервиса"
 sudo systemctl status byedpi
+exit
