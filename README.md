@@ -34,3 +34,6 @@ autoconf_zram.sh
 
 autoconf_sddm.sh  
 Автонастройка sddm + тема sugar-candy
+
+autoconf_yggdrasil_archlinux.sh  
+Автонастройка yggdrasil с российскими пирами

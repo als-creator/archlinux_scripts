@@ -1,6 +1,7 @@
-# setup_conky.sh — Индивидуальная установка Conky config для Arch Linux с автозапуском
-# Автор: als-creator/conky_conf repo
 #!/bin/bash
+
+# setup_conky.sh — Индивидуальная установка Conky config для Arch Linux с автозапуском
+# Автор: als-creator (conky_conf repo)
 
 echo "Установка Conky + config для мониторинга температуры CPU с автозапуском"
 
