@@ -1,6 +1,7 @@
 #!/bin/bash
 # post-install.sh — пост-инсталляционные настройки для Arch Linux и Arch-based distros
 # Пользователь: als
+# Для использования нужно сменить все вхождения als в скрипте на своего пользователя
 # На основе Arch Wiki:
 # https://wiki.archlinux.org/title/General_recommendations
 # https://wiki.archlinux.org/title/System_maintenance
