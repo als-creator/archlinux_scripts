@@ -66,15 +66,15 @@ echo "==========================================================================
 
 HOME_DIR=$(getent passwd "$USERNAME" | cut -d: -f6)
 
-sudo mkdir -p "/run/media/${USERNAME}/Data"
-sudo mkdir -p "/run/media/${USERNAME}/Work"
+sudo mkdir -p "/mnt/Data"
+sudo mkdir -p "/mnt/Work"
 
 echo "Созданы точки монтирования:"
-echo "/run/media/${USERNAME}/Data"
-echo "/run/media/${USERNAME}/Work"
+echo "/mnt/Data"
+echo "/mnt/Work"
 
-FSTAB_LINE1="LABEL=Data /run/media/${USERNAME}/Data auto nosuid,nodev,nofail,x-gvfs-show 0 0"
-FSTAB_LINE2="LABEL=Work /run/media/${USERNAME}/Work auto nosuid,nodev,nofail,x-gvfs-show 0 0"
+FSTAB_LINE1="LABEL=Data /mnt/Data auto nosuid,nodev,nofail,x-gvfs-show 0 0"
+FSTAB_LINE2="LABEL=Work /mnt/Work auto nosuid,nodev,nofail,x-gvfs-show 0 0"
 
 if grep -q "LABEL=Data" /etc/fstab; then
     echo "Строка LABEL=Data уже есть в /etc/fstab"
@@ -227,16 +227,28 @@ echo "Установка основных пакетов через pacman -S"
 echo "================================================================================"
 
 PACKAGES=(
+#    hblock
+#    papirus-icon-theme
+#    obsidian-icon-theme
+#    nftables
+#    glances
+#    guake
+#    lf
+#    obsidian
+#    aichat
+#    thunar-vcs-plugin
+#    ttf-jetbrains-mono-nerd
+#    ttf-hack-nerd
+#    gnome-software
+#    rawtherapee
+#    gimp
+#    blender
+#    krita
+#    inkscape
     base-devel
-    hblock
-    papirus-icon-theme
-    obsidian-icon-theme
-    gnome-software
-    nftables
     fish
     xclip
     btop
-    glances
     whois
     mtr
     traceroute
@@ -249,9 +261,7 @@ PACKAGES=(
     smplayer-themes
     neovim
     fastfetch
-    guake
     vulkan-radeon
-    vulkan-intel
     lib32-vulkan-radeon
     vulkan-tools
     mesa
@@ -260,7 +270,6 @@ PACKAGES=(
     lib32-libva-mesa-driver
     micro
     ranger
-    lf
     mc
     yazi
     galculator
@@ -297,28 +306,19 @@ PACKAGES=(
     nikto
     aircrack-ng
     engrampa
-    7zip
     github-cli
     viewnior
-    rawtherapee
     lazygit
     lazydocker
-    ttf-jetbrains-mono-nerd
-    ttf-hack-nerd
-    ttf-dejavu-nerd
-    ttf-dejavu
     terminus-font
     noto-fonts
     ffmpegthumbnailer
     gvfs
     network-manager-applet
     xfce4-goodies
-    thunar-vcs-plugin
-    obsidian
     obs-studio
     flatpak
     zenmap
-    aichat
     wgetpaste
     nvtop
     ddgr
@@ -326,9 +326,10 @@ PACKAGES=(
     docker-buildx
     docker
 # aur пакеты
-    thorium-browser-bin
+#    thorium-browser-bin
     yandex-browser
     pyradio
+    joplin
     kora-icon-theme
     radiotray-ng
     anydesk-bin
