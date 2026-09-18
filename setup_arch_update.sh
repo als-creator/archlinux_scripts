@@ -65,10 +65,22 @@ else
     exit 1
 fi
 
+# Установка скрипта субботней очистки (содержимое cc из конфигов шеллов)
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -f "$SCRIPT_DIR/clean_system.sh" ]; then
+    install -m 755 "$SCRIPT_DIR/clean_system.sh" /usr/local/bin/clean_system.sh
+    echo "Установлен /usr/local/bin/clean_system.sh" | tee -a "$LOGFILE"
+else
+    echo "Предупреждение: не найден clean_system.sh рядом со скриптом" | tee -a "$LOGFILE"
+fi
+
 # Cron‑задания (используем pacman, как в исходном cron)
 CRON_DAILY_UPDATE="0 12 * * * root pacman -Syu --noconfirm >> \"$LOGFILE\" 2>&1"
 CRON_NIGHTLY_UPDATE="0 22 * * * root pacman -Syu --noconfirm >> \"$LOGFILE\" 2>&1"
-CRON_CLEAN_CACHE="30 11 * * 6 root pacman -Scc --noconfirm && flatpak uninstall --unused -y && journalctl --vacuum-time=1w >> \"$LOGFILE\" 2>&1"
+CRON_CLEAN_CACHE="30 11 * * 6 root /usr/local/bin/clean_system.sh >> \"$LOGFILE\" 2>&1"
+
+# Убираем старые варианты субботней очистки, чтобы не было дублей в /etc/crontab
+sed -i '/^30 11 \* \* 6 root/d' /etc/crontab 2>/dev/null || true
 
 # Проверяем существование заданий в /etc/crontab
 check_cron_exists() {
