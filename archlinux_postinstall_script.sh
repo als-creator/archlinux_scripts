@@ -329,7 +329,6 @@ PACKAGES=(
 #    thorium-browser-bin
     yandex-browser
     pyradio
-    joplin
     kora-icon-theme
     radiotray-ng
     anydesk-bin
