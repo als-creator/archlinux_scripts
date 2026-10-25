@@ -4,8 +4,8 @@ archlinux_postinstall_script.sh
 Создание пользователя, добавление в необходимые группы, добавление дополнительных реп, установка набора пакетов, сомнительные оптимизации имени меня.
 
 autoinstall_byedpi_archlinux.sh  
-Скрипт для автонастройки byedpi на archlinux, поднимает службу с одним пресетом, настроить порт и правило можно через /etc/byedpi.conf  
-Адрес 127.0.0.1:14228 socks5, для настройки прокси браузера можно использовать расширения FoxyProxy, SmartProxy или Proxy SwitchyOmega 3  
+Установщик byedpi: пакет `byedpi-bin` из AUR. По умолчанию — режим без расширения (ipset): весь TCP 80/443 идёт через ByeDPI с фильтром по SNI, браузер настраивать не нужно. Конфиг в `/etc/byedpi/{conf,hosts,rule,port}`, блокировка QUIC.  
+`--extension` — socks5 127.0.0.1:14228 для расширения браузера. `--off` удаляет сервисы, правила iptables, конфиги и сам пакет (`--keep-package` оставит пакет).  
 
 autoinstall_virtmanager_archinstall.sh  
 Настраивает virtmanager по archwiki  

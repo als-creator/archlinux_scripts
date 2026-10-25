@@ -11,6 +11,54 @@ if ! command -v sudo >/dev/null 2>&1; then
   exit 1
 fi
 
+# --block-quic: блокировать UDP 443 (REJECT), чтобы браузер шёл по TCP через zapret
+BLOCK_QUIC="no"
+for a in "$@"; do
+  [ "$a" = "--block-quic" ] && BLOCK_QUIC="yes"
+done
+
+# ---------------------------------------------------------------------------
+# Удаление: --remove | --off | --uninstall
+# Снимает сервис, юниты и правила, стирает каталог целиком (включая списки и
+# бэкапы). Настройки byedpi не трогает.
+# ---------------------------------------------------------------------------
+case " ${*:-} " in
+*" --remove "*|*" --off "*|*" --uninstall "*)
+    ZDIR=/opt/zapret
+    echo "=== Удаление zapret ==="
+    sudo systemctl disable --now zapret 2>/dev/null || true
+    sudo systemctl disable --now zapret2 2>/dev/null || true
+    sudo systemctl disable --now zapret2-list-update.timer 2>/dev/null || true
+    sudo systemctl disable --now zapret-quic 2>/dev/null || true
+    sudo rm -f /etc/systemd/system/zapret.service \
+               /etc/systemd/system/zapret2.service \
+               /etc/systemd/system/zapret2-list-update.service \
+               /etc/systemd/system/zapret2-list-update.timer \
+               /etc/systemd/system/zapret-quic.service
+    sudo systemctl daemon-reload 2>/dev/null || true
+    # nft-таблица (если zapret создавал её) и цепочки ZAPRET_* в iptables
+    sudo nft delete table inet zapret 2>/dev/null || true
+    for c in $(sudo iptables-save 2>/dev/null | sed -n 's/^-A \(ZAPRET[^ ]*\).*/\1/p' | sort -u || true); do
+        for ch in OUTPUT POSTROUTING PREROUTING INPUT; do
+            sudo iptables -t mangle -D "$ch" -j "$c" 2>/dev/null || true
+        done
+        sudo iptables -t mangle -F "$c" 2>/dev/null || true
+        sudo iptables -t mangle -X "$c" 2>/dev/null || true
+    done
+    for c in ZAPRET_QUIC; do
+        sudo iptables -t filter -D OUTPUT -j "$c" 2>/dev/null || true
+        sudo iptables -t filter -F "$c" 2>/dev/null || true
+        sudo iptables -t filter -X "$c" 2>/dev/null || true
+    done
+    sudo rm -rf "$ZDIR" /etc/zapret /etc/zapret2
+    if pgrep -x nfqws >/dev/null 2>&1; then
+        echo "[WARN] nfqws ещё запущен — остановите: sudo systemctl stop zapret"
+    fi
+    echo "Удалено: $ZDIR, юниты, правила. Списки и их .bak тоже (каталог стёрт)."
+    exit 0
+    ;;
+esac
+
 # Создание файла исключений, если его нет
 EXCLUDE_FILE="/opt/zapret/ipset/zapret-hosts-user-exclude.txt"
 if [ ! -f "$EXCLUDE_FILE" ]; then
@@ -60,7 +108,7 @@ sudo tee /opt/zapret/config >/dev/null <<'EOF'
 #WS_USER=nobody
 
 # override firewall type : iptables,nftables,ipfw
-FWTYPE=nftables
+FWTYPE=iptables
 # nftables only : set this to 0 to use pre-nat mode. default is post-nat.
 # pre-nat mode disables some bypass techniques for forwarded traffic but allows to see client IP addresses in debug log
 #POSTNAT=0
@@ -122,7 +170,7 @@ TPWS_OPT="
 
 NFQWS_ENABLE=1
 # redirect outgoing traffic with connbytes limiter applied in both directions.
-NFQWS_PORTS_TCP=80,443,50000-50099
+NFQWS_PORTS_TCP=80,443
 NFQWS_PORTS_UDP=443,50000-65535
 # PKT_OUT means connbytes dir original
 # PKT_IN means connbytes dir reply
@@ -141,16 +189,15 @@ NFQWS_UDP_PKT_IN=0
 # hostlist markers are replaced to empty string if MODE_FILTER does not satisfy
 # <HOSTLIST_NOAUTO> appends ipset/zapret-hosts-auto.txt as normal list
 NFQWS_OPT="
---filter-tcp=80,443 --hostlist="/opt/zapret/ipset/zapret-hosts-user.txt" --dpi-desync=fake,multidisorder --dpi-desync-split-pos=1,sniext+1,host+1,midsld-2,midsld,midsld+2,endhost-1 --dpi-desync-ttl=4 --dpi-desync-fake-tls=0x00000000 --dpi-desync-fake-tls=! --dpi-desync-fake-tls-mod=rnd,rndsni --hostlist-exclude="/opt/zapret/ipset/zapret-hosts-user-exclude.txt" --new ^
---filter-udp=80,443  --hostlist="/opt/zapret/ipset/zapret-hosts-user.txt" --dpi-desync=fake,multidisorder --dpi-desync-split-pos=1,sniext+1,host+1,midsld-2,midsld,midsld+2,endhost-1 --dpi-desync-ttl=4 --dpi-desync-fake-tls=0x00000000 --dpi-desync-fake-tls=! --dpi-desync-fake-tls-mod=rnd,rndsni,dupsid --hostlist-exclude="/opt/zapret/ipset/zapret-hosts-user-exclude.txt" --new ^
---filter-udp=50000-50099 --filter-l7=discord,stun --dpi-desync=fake --hostlist-exclude="/opt/zapret/ipset/zapret-hosts-user-exclude.txt""
-
-
+--filter-udp=443 --hostlist="/opt/zapret/ipset/zapret-hosts-user.txt" --dpi-desync=fake --dpi-desync-repeats=6 --dpi-desync-fake-quic="/opt/zapret/files/fake/quic_initial_www_google_com.bin" --hostlist-exclude="/opt/zapret/ipset/zapret-hosts-user-exclude.txt" --new ^
+--filter-udp=50000-65535  --dpi-desync=fake --dpi-desync-any-protocol --dpi-desync-cutoff=d3 --dpi-desync-repeats=6 --hostlist-exclude="/opt/zapret/ipset/zapret-hosts-user-exclude.txt" --new ^
+--filter-tcp=443 --hostlist="/opt/zapret/ipset/zapret-hosts-user.txt" --dpi-desync=fake,split --dpi-desync-autottl=2 --dpi-desync-repeats=6 --dpi-desync-fooling=badseq --dpi-desync-fake-tls="/opt/zapret/files/fake/tls_clienthello_www_google_com.bin" --hostlist-exclude="/opt/zapret/ipset/zapret-hosts-user-exclude.txt" --new ^
+--filter-tcp=443 --hostlist="/opt/zapret/ipset/zapret-hosts-user.txt" --dpi-desync=multisplit --dpi-desync-split-pos=1,midsld,sniext --dpi-desync-split-seqovl=1 --dpi-desync-fooling=badseq,md5sig --dpi-desync-repeats=6 --dpi-desync-autottl=2 --dpi-desync-fake-tls="/opt/zapret/files/fake/tls_clienthello_www_google_com.bin" --hostlist-exclude="/opt/zapret/ipset/zapret-hosts-user-exclude.txt""
 # none,ipset,hostlist,autohostlist
-MODE_FILTER=hostlist
+MODE_FILTER=autohostlist
 
 # openwrt only : donttouch,none,software,hardware
-FLOWOFFLOAD=none
+FLOWOFFLOAD=donttouch
 
 # openwrt: specify networks to be treated as LAN. default is "lan"
 #OPENWRT_LAN="lan lan2 lan3"
@@ -163,7 +210,7 @@ FLOWOFFLOAD=none
 # or leave them commented if its not router
 # it's possible to specify multiple interfaces like this : IFACE_LAN="eth0 eth1 eth2"
 # if IFACE_WAN6 is not defined it take the value of IFACE_WAN
-IFACE_LAN=enp37s0
+#IFACE_LAN=
 #IFACE_WAN=
 #IFACE_WAN6="ipsec0 wireguard0 he_net"
 
@@ -184,10 +231,61 @@ DISABLE_IPV6=1
 # select which init script will be used to get ip or host list
 # possible values : get_user.sh get_antizapret.sh get_combined.sh get_reestr.sh get_hostlist.sh
 # comment if not required
-GETLIST=get_refilter_domains.sh
+#GETLIST=
 EOF
 
+if [ -f /opt/zapret/ipset/zapret-hosts-user.txt ] && [ "$KEEP_LISTS" != "yes" ]; then
+    sudo cp -p /opt/zapret/ipset/zapret-hosts-user.txt "/opt/zapret/ipset/zapret-hosts-user.txt.bak-$(date +%Y%m%d-%H%M%S)" 2>/dev/null \
+        || sudo cp /opt/zapret/ipset/zapret-hosts-user.txt "/opt/zapret/ipset/zapret-hosts-user.txt.bak-$(date +%Y%m%d-%H%M%S)" 2>/dev/null || true
+    log_warn "Список доменов обновляется из скрипта, предыдущий сохранён в .bak-<дата>"
+elif [ -f /opt/zapret/ipset/zapret-hosts-user.txt ]; then
+    log_warn "Список уже есть и задан --keep-lists, не перезаписан: /opt/zapret/ipset/zapret-hosts-user.txt"
+fi
+
 sudo tee /opt/zapret/ipset/zapret-hosts-user.txt >/dev/null <<'EOF'
+# --- МИНИМУМ: rutor / rutracker / nnm-club / youtube ---
+# Rutor
+rutor.info
+rutor.is
+# Rutracker
+rutracker.org
+rutracker.cc
+# NNM-Club
+nnmclub.to
+nnmclub.me
+# YouTube (включая CDN-поддомены)
+youtube.com
+googlevideo.com
+ggpht.com
+ytimg.com
+yt.be
+youtu.be
+googleadservices.com
+gvt1.com
+youtube-nocookie.com
+youtube-ui.l.google.com
+youtubeembeddedplayer.googleapis.com
+youtube.googleapis.com
+youtubei.googleapis.com
+jnn-pa.googleapis.com
+yt-video-upload.l.google.com
+wide-youtube.l.google.com
+play.google.com
+accounts.google.com
+youtubekids.com
+fonts.googleapis.com
+googleads.g.doubleclick.net
+# YouTube: apex-ы часто без A-записи, но нужны для матчинга поддоменов
+gstatic.com
+googleusercontent.com
+l.google.com
+1e100.net
+m.youtube.com
+img.youtube.com
+yt3.googleusercontent.com
+yt3.ggpht.com
+yt4.ggpht.com
+youtube.ru
 youtube.com
 googlevideo.com
 ggpht.com
@@ -254,9 +352,80 @@ ntc.party
 torproject.org
 meduza.io
 te-st.org
+# --- Заблокированные сервисы и медиа ---------------------------------------
+# Проверено: без desync не открываются (000), с zapret работают.
+signal.org
+www.signal.org
+svoboda.org
+www.svoboda.org
+currenttime.tv
+www.currenttime.tv
+novayagazeta.eu
+www.novayagazeta.eu
+ovdinfo.org
+www.ovdinfo.org
 EOF
 
 sudo systemctl enable --now zapret.service || sudo systemctl start zapret.service || true
+
+# ---------------------------------------------------------------------------
+# Блокировка QUIC (UDP 443) — только по --block-quic.
+#
+# Сам zapret умеет обходить блокировку QUIC (--filter-udp=443 + fake-quic),
+# поэтому по умолчанию ничего не блокируем. Флаг нужен, когда fake не помогает
+# и HTTP/3 всё равно висит: быстрый REJECT заставляет браузер идти по TCP.
+# ---------------------------------------------------------------------------
+setup_block_quic(){
+  [ "$BLOCK_QUIC" = "yes" ] || return 0
+  if ! command -v iptables >/dev/null 2>&1; then
+    echo "[WARN] iptables не найден — блокировка QUIC пропущена" >&2
+    return 0
+  fi
+  sudo tee /etc/systemd/system/zapret-quic.service >/dev/null <<'EOF'
+[Unit]
+Description=Block QUIC (UDP 443) so browsers use TCP through zapret
+After=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c 'iptables -t filter -N ZAPRET_QUIC 2>/dev/null || true; iptables -t filter -F ZAPRET_QUIC; iptables -t filter -A ZAPRET_QUIC -p udp --dport 443 -m owner ! --uid-owner 0 -j REJECT --reject-with icmp-port-unreachable; iptables -t filter -C OUTPUT -j ZAPRET_QUIC 2>/dev/null || iptables -t filter -A OUTPUT -j ZAPRET_QUIC'
+ExecStop=/bin/sh -c 'iptables -t filter -D OUTPUT -j ZAPRET_QUIC 2>/dev/null || true; iptables -t filter -F ZAPRET_QUIC 2>/dev/null || true; iptables -t filter -X ZAPRET_QUIC 2>/dev/null || true'
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  sudo systemctl daemon-reload >/dev/null 2>&1
+  sudo systemctl enable --now zapret-quic.service >/dev/null 2>&1 || true
+  echo "[OK] QUIC (UDP 443) заблокирован: zapret-quic.service"
+}
+setup_block_quic
+
+# ---------------------------------------------------------------------------
+# Проверка минимального набора доменов
+# ---------------------------------------------------------------------------
+verify_min_domains(){
+    command -v curl >/dev/null 2>&1 || { echo "curl не найден, пропускаю проверку"; return 0; }
+    min_domains="rutracker.org nnmclub.to www.youtube.com i.ytimg.com yt3.googleusercontent.com discord.com"
+    echo
+    echo "Минимальный набор доменов:"
+    for h in $min_domains; do
+        code=$(curl -k -sS -m 8 -o /dev/null -w '%{http_code}' "https://$h/" 2>/dev/null)
+        if [ -n "$code" ] && [ "$code" != "000" ]; then
+            printf '  %-30s OK (%s)\n' "$h" "$code"
+            continue
+        fi
+        inlist=no
+        grep -qE "^[[:space:]]*$(printf '%s' "$h" | sed 's/\./\\./g')([[:space:]]*\$)" /opt/zapret/ipset/zapret-hosts-user.txt 2>/dev/null && inlist=yes
+        if [ "$inlist" = no ]; then
+            printf '  %-30s FAIL (домена нет в zapret-hosts-user.txt)\n' "$h"
+        else
+            printf '  %-30s FAIL (домен в списке, но не открывается — вероятна блокировка по IP)\n' "$h"
+        fi
+    done
+}
+
+verify_min_domains
 
 cat <<'EOF'
 
